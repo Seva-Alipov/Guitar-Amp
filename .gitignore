@@ -1,0 +1,15 @@
+# Build
+build/
+
+# CubeMX generated drivers (can be regenerated)
+Drivers/
+
+# IDE files
+.vs/
+*.launch
+.settings/
+.cproject
+.project
+
+# CubeMX backup files
+*.bak
