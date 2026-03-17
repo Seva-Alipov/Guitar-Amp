@@ -3,6 +3,7 @@ build/
 
 # CubeMX generated drivers (can be regenerated)
 Drivers/
+.mxproject
 
 # IDE files
 .vs/
@@ -10,6 +11,7 @@ Drivers/
 .settings/
 .cproject
 .project
+.vscode/
 
 # CubeMX backup files
 *.bak
