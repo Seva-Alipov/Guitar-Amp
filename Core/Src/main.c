@@ -143,6 +143,7 @@ int main(void)
   HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_1, dac_buf, AUDIO_BLOCK_SIZE * 2, DAC_ALIGN_12B_R);
   HAL_ADC_Start_DMA(&hadc1, adc_buf, AUDIO_BLOCK_SIZE * 2);
   HAL_TIM_Base_Start(&htim2);
+  printf("Amp Started\r\n");
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -249,7 +250,7 @@ static void MX_ADC1_Init(void)
   hadc1.Init.ExternalTrigConv = ADC_EXTERNALTRIGCONV_T2_TRGO;
   hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
   hadc1.Init.NbrOfConversion = 1;
-  hadc1.Init.DMAContinuousRequests = DISABLE;
+  hadc1.Init.DMAContinuousRequests = ENABLE;
   hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
   if (HAL_ADC_Init(&hadc1) != HAL_OK)
   {
