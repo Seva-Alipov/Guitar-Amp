@@ -98,10 +98,15 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 
 void process_audio(uint32_t* in_buf, uint32_t* out_buf, uint16_t size)
 {
-  // Does nothing for now — pass-through
-  for (uint16_t i = 0; i < size; i++) {
-    out_buf[i] = in_buf[i];
-  }
+    for (uint16_t i = 0; i < size; i++)
+    {
+        out_buf[i] = in_buf[i];  // pass-through
+
+        // Send sample to visualiser as 2-byte big-endian
+        uint16_t sample = (uint16_t)in_buf[i];
+        uint8_t bytes[2] = { sample >> 8, sample & 0xFF };
+        HAL_UART_Transmit(&huart3, bytes, 2, HAL_MAX_DELAY);
+    }
 }
 /* USER CODE END 0 */
 
@@ -143,7 +148,6 @@ int main(void)
   HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_1, dac_buf, AUDIO_BLOCK_SIZE * 2, DAC_ALIGN_12B_R);
   HAL_ADC_Start_DMA(&hadc1, adc_buf, AUDIO_BLOCK_SIZE * 2);
   HAL_TIM_Base_Start(&htim2);
-  printf("Amp Started\r\n");
   /* USER CODE END 2 */
 
   /* Infinite loop */
