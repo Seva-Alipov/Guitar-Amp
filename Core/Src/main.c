@@ -51,7 +51,16 @@ TIM_HandleTypeDef htim2;
 UART_HandleTypeDef huart3;
 
 /* USER CODE BEGIN PV */
+#define AUDIO_BLOCK_SIZE  128
 
+// ADC ping-pong buffer (2x block size for DMA double-buffering)
+static uint32_t adc_buf[AUDIO_BLOCK_SIZE * 2];
+// DAC ping-pong buffer
+static uint32_t dac_buf[AUDIO_BLOCK_SIZE * 2];
+
+// 0 = process lower half, 1 = process upper half
+static volatile uint8_t audio_block_ready = 0;
+static volatile uint8_t audio_block_index = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -68,18 +77,31 @@ static void MX_USART3_UART_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-int __io_putchar(int ch)
+int __io_putchar(int ch) {
+  HAL_UART_Transmit(&huart3, (uint8_t*)&ch, 1, HAL_MAX_DELAY);
+  return ch;
+}  // keep existing
+
+void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc)
 {
-    HAL_UART_Transmit(&huart3, (uint8_t*)&ch, 1, HAL_MAX_DELAY);
-    return ch;
+  // Lower half of adc_buf is ready
+  audio_block_index = 0;
+  audio_block_ready = 1;
 }
 
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 {
-    if (GPIO_Pin == USER_BUTTON_Pin)
-    {
+  // Upper half of adc_buf is ready
+  audio_block_index = 1;
+  audio_block_ready = 1;
+}
 
-    }
+void process_audio(uint32_t* in_buf, uint32_t* out_buf, uint16_t size)
+{
+  // Does nothing for now — pass-through
+  for (uint16_t i = 0; i < size; i++) {
+    out_buf[i] = in_buf[i];
+  }
 }
 /* USER CODE END 0 */
 
@@ -118,7 +140,9 @@ int main(void)
   MX_TIM2_Init();
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
-
+  HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_1, dac_buf, AUDIO_BLOCK_SIZE * 2, DAC_ALIGN_12B_R);
+  HAL_ADC_Start_DMA(&hadc1, adc_buf, AUDIO_BLOCK_SIZE * 2);
+  HAL_TIM_Base_Start(&htim2);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -128,6 +152,15 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    if (audio_block_ready) {
+      audio_block_ready = 0;
+      uint32_t offset = audio_block_index * AUDIO_BLOCK_SIZE;
+      process_audio(
+        &adc_buf[offset],
+        &dac_buf[offset],
+        AUDIO_BLOCK_SIZE
+      );
+    }
   }
   /* USER CODE END 3 */
 }
