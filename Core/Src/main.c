@@ -103,6 +103,43 @@ void process_audio(uint32_t* in_buf, uint32_t* out_buf, uint16_t size)
     out_buf[i] = in_buf[i];
   }
 }
+
+
+// no guarantee that it works; testing pretty much contingent on in/out stuff working
+void echo(uint16_t size, uint16_t delay_size, uint16_t x[size], uint16_t delayLine[delay_size]){
+  uint16_t delay_ms, bl, fb, ff, delay_samples;
+  uint32_t fs;
+
+  uint16_t buff_size_mask = size - 1;
+  uint16_t delay_buff_size_mask = delay_size - 1;
+
+  delay_ms = 1;
+  fs = 48000;       // sample rate
+  bl = 1;           // blend or dry mix - amount of original signal mixed into output
+  fb = 0.5;         // feedback - amount of delayed signal that will support additional delay
+  ff = 0.7;         // feed forward - amount of delayed signal that will be sent to output
+
+  delay_samples = delay_ms * fs / 1000;
+
+  uint32_t i;
+  uint8_t read_pointer, write_pointer;
+
+  i = 0;
+  write_pointer = 0;                          // start at 0
+  read_pointer = delay_size - delay_samples;  // start behind write pointer
+
+  while(1){
+    delayLine[write_pointer] = x[i] + fb * delayLine[read_pointer];
+    write_pointer = (write_pointer+1) & delay_buff_size_mask;
+
+
+    x[i] += bl * x[i] + ff * delayLine[read_pointer];
+    ++i;
+    i = (i+1) & buff_size_mask;
+    read_pointer = (read_pointer+1) & buff_size_mask;
+  }
+}
+
 /* USER CODE END 0 */
 
 /**
