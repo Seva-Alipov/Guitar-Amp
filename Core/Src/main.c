@@ -54,7 +54,7 @@ UART_HandleTypeDef huart3;
 
 /* USER CODE BEGIN PV */
 #define AUDIO_BLOCK_SIZE  128
-#define DELAY_SIZE 25000
+#define DELAY_SIZE 32768
 
 // ADC ping-pong buffer (2x block size for DMA double-buffering)
 static uint16_t adc_buf[AUDIO_BLOCK_SIZE * 2];
@@ -85,9 +85,10 @@ static void MX_DAC_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_USART3_UART_Init(void);
 /* USER CODE BEGIN PFP */
+
 uint16_t last_value;
 void reverb(uint16_t* in_buf, uint16_t* out_buf, uint16_t size);
-delay(uint16_t size, uint16_t in[size], uint16_t out[size]);
+void delay(uint16_t size, uint16_t *in, uint16_t *out);
 
 /* USER CODE END PFP */
 
@@ -131,7 +132,7 @@ void delay_parameters_init(void){
   read_pointer = DELAY_SIZE - delay_samples;  // start behind write pointer
 }
 
-void delay(uint16_t size, uint16_t in[size], uint16_t out[size]){
+void delay(uint16_t size, uint16_t *in, uint16_t *out){
   float bl, fb, ff;
 
   bl = 1;           // blend or dry mix - amount of original signal mixed into output
@@ -149,7 +150,7 @@ void delay(uint16_t size, uint16_t in[size], uint16_t out[size]){
 
     ++i;
     write_pointer = (write_pointer+1) & delay_buff_size_mask;
-    read_pointer = (read_pointer+1) & buff_size_mask;
+    read_pointer = (read_pointer+1) & delay_buff_size_mask;
   }
 }
 
