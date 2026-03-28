@@ -109,7 +109,7 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
   audio_block_ready = 1;
 }
 
-//EFFECTS BEGIN
+//================================= EFFECTS BEGIN ====================================
 void reverb(uint16_t* in_buf, uint16_t* out_buf, uint16_t size) {
   static uint16_t last_value = 2048;
 
@@ -190,26 +190,6 @@ const float closed_gain = 0.0f;
   }
 }
 
-//EFFECTS END
-
-void process_audio(uint16_t* in_buf, uint16_t* out_buf, uint16_t size)
-{
-  delay(size, in_buf, effect_buf);
-
-  for (uint16_t i = 0; i < size; i++) {
-    out_buf[i] = effect_buf[i];
-  }
-}
-
-void delay_parameters_init(void){
-  delay_ms = 500;
-  fs = 48000;
-  delay_samples = delay_ms * fs / 1000;
-    
-  write_pointer = 0;
-  read_pointer = DELAY_SIZE - delay_samples;  // start behind write pointer
-}
-
 void delay(uint16_t size, uint16_t *in, uint16_t *out){
   float bl, fb, ff;
 
@@ -230,6 +210,26 @@ void delay(uint16_t size, uint16_t *in, uint16_t *out){
     write_pointer = (write_pointer+1) & delay_buff_size_mask;
     read_pointer = (read_pointer+1) & delay_buff_size_mask;
   }
+}
+
+// =========================== EFFECTS END =================================
+
+void process_audio(uint16_t* in_buf, uint16_t* out_buf, uint16_t size)
+{
+  delay(size, in_buf, effect_buf);
+
+  for (uint16_t i = 0; i < size; i++) {
+    out_buf[i] = effect_buf[i];
+  }
+}
+
+void delay_parameters_init(void){
+  delay_ms = 500;
+  fs = 48000;
+  delay_samples = delay_ms * fs / 1000;
+    
+  write_pointer = 0;
+  read_pointer = DELAY_SIZE - delay_samples;  // start behind write pointer
 }
 
 /* USER CODE END 0 */
