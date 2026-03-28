@@ -612,19 +612,15 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
     switch (Effects_On) {
       case None:
         Effects_On = NoiseGate;
-        printf("Noise Gate\r\n");
         break;
       case NoiseGate:
         Effects_On = NoiseGate_Delay;
-        printf("Noise Gate & Delay\r\n");
         break;
       case NoiseGate_Delay:
         Effects_On = Delay;
-        printf("Delay only\r\n");
         break;
       case Delay:
         Effects_On = None;
-        printf("Effects off\r\n");
         break;
     }
   }
