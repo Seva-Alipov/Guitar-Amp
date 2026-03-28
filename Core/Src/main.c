@@ -53,6 +53,8 @@ DMA_HandleTypeDef hdma_adc1;
 DAC_HandleTypeDef hdac;
 DMA_HandleTypeDef hdma_dac1;
 
+I2S_HandleTypeDef hi2s2;
+
 TIM_HandleTypeDef htim2;
 
 UART_HandleTypeDef huart3;
@@ -65,6 +67,8 @@ UART_HandleTypeDef huart3;
 static uint16_t adc_buf[AUDIO_BLOCK_SIZE * 2];
 // DAC ping-pong buffer
 static uint16_t dac_buf[AUDIO_BLOCK_SIZE * 2];
+// I2S output buffer (stereo)
+static uint16_t i2s_tx_buf[4 * AUDIO_BLOCK_SIZE];
 // Effects use this buffer
 uint16_t effect_buf[AUDIO_BLOCK_SIZE * 2];
 
@@ -91,6 +95,7 @@ static void MX_ADC1_Init(void);
 static void MX_DAC_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_USART3_UART_Init(void);
+static void MX_I2S2_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -289,6 +294,7 @@ int main(void)
   MX_DAC_Init();
   MX_TIM2_Init();
   MX_USART3_UART_Init();
+  MX_I2S2_Init();
   /* USER CODE BEGIN 2 */
   HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_1, (uint32_t *)dac_buf, AUDIO_BLOCK_SIZE * 2, DAC_ALIGN_12B_R);
   HAL_ADC_Start_DMA(&hadc1, (uint32_t *)adc_buf, AUDIO_BLOCK_SIZE * 2);
@@ -313,6 +319,12 @@ int main(void)
         &dac_buf[offset],
         AUDIO_BLOCK_SIZE
       );
+        for (uint16_t i = 0; i < AUDIO_BLOCK_SIZE; i++) {
+          uint16_t s = dac_buf[offset + i];
+
+          i2s_tx_buf[2*(offset + i)]     = s; // Left
+          i2s_tx_buf[2*(offset + i) + 1] = s; // Right
+        }
     }
   }
   /* USER CODE END 3 */
@@ -461,6 +473,40 @@ static void MX_DAC_Init(void)
   /* USER CODE BEGIN DAC_Init 2 */
 
   /* USER CODE END DAC_Init 2 */
+
+}
+
+/**
+  * @brief I2S2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_I2S2_Init(void)
+{
+
+  /* USER CODE BEGIN I2S2_Init 0 */
+
+  /* USER CODE END I2S2_Init 0 */
+
+  /* USER CODE BEGIN I2S2_Init 1 */
+
+  /* USER CODE END I2S2_Init 1 */
+  hi2s2.Instance = SPI2;
+  hi2s2.Init.Mode = I2S_MODE_MASTER_TX;
+  hi2s2.Init.Standard = I2S_STANDARD_PHILIPS;
+  hi2s2.Init.DataFormat = I2S_DATAFORMAT_16B;
+  hi2s2.Init.MCLKOutput = I2S_MCLKOUTPUT_DISABLE;
+  hi2s2.Init.AudioFreq = I2S_AUDIOFREQ_48K;
+  hi2s2.Init.CPOL = I2S_CPOL_LOW;
+  hi2s2.Init.ClockSource = I2S_CLOCK_PLL;
+  hi2s2.Init.FullDuplexMode = I2S_FULLDUPLEXMODE_DISABLE;
+  if (HAL_I2S_Init(&hi2s2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2S2_Init 2 */
+
+  /* USER CODE END I2S2_Init 2 */
 
 }
 
