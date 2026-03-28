@@ -22,6 +22,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "stdio.h"
+#include <stdint.h>
 #include "stm32f4xx_hal_gpio.h"
 /* USER CODE END Includes */
 
@@ -58,6 +59,8 @@ UART_HandleTypeDef huart3;
 static uint32_t adc_buf[AUDIO_BLOCK_SIZE * 2];
 // DAC ping-pong buffer
 static uint32_t dac_buf[AUDIO_BLOCK_SIZE * 2];
+// Effects use this buffer
+uint32_t effect_buf[AUDIO_BLOCK_SIZE * 2];
 
 // 0 = process lower half, 1 = process upper half
 static volatile uint8_t audio_block_ready = 0;
