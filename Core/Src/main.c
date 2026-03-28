@@ -54,6 +54,7 @@ UART_HandleTypeDef huart3;
 
 /* USER CODE BEGIN PV */
 #define AUDIO_BLOCK_SIZE  128
+#define DELAY_SIZE 25000
 
 // ADC ping-pong buffer (2x block size for DMA double-buffering)
 static uint32_t adc_buf[AUDIO_BLOCK_SIZE * 2];
@@ -61,6 +62,14 @@ static uint32_t adc_buf[AUDIO_BLOCK_SIZE * 2];
 static uint32_t dac_buf[AUDIO_BLOCK_SIZE * 2];
 // Effects use this buffer
 uint32_t effect_buf[AUDIO_BLOCK_SIZE * 2];
+
+
+/* DELAY LINE STUFF FOR THE DELAY FUNCTION */
+const uint16_t delay_buff_size_mask = DELAY_SIZE-1;
+static uint16_t delay_ms, delay_samples, fs;
+static uint8_t read_pointer, write_pointer;
+
+uint16_t delayLine[DELAY_SIZE];
 
 // 0 = process lower half, 1 = process upper half
 static volatile uint8_t audio_block_ready = 0;
@@ -76,6 +85,8 @@ static void MX_DAC_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_USART3_UART_Init(void);
 /* USER CODE BEGIN PFP */
+
+delay(uint16_t size, uint16_t in[size], uint16_t out[size]);
 
 /* USER CODE END PFP */
 
@@ -100,47 +111,45 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
   audio_block_ready = 1;
 }
 
+
 void process_audio(uint32_t* in_buf, uint32_t* out_buf, uint16_t size)
 {
-  // Does nothing for now — pass-through
+  delay(size, in_buf, effect_buf);
+
   for (uint16_t i = 0; i < size; i++) {
-    out_buf[i] = in_buf[i];
+    out_buf[i] = effect_buf[i];
   }
 }
 
+void delay_parameters_init(void){
+  delay_ms = 500;
+  fs = 48000;
+  delay_samples = delay_ms * fs / 1000;
+    
+  write_pointer = 0;
+  read_pointer = DELAY_SIZE - delay_samples;  // start behind write pointer
+}
 
-// no guarantee that it works; testing pretty much contingent on in/out stuff working
-void echo(uint16_t size, uint16_t delay_size, uint16_t x[size], uint16_t delayLine[delay_size]){
-  uint16_t delay_ms, bl, fb, ff, delay_samples;
-  uint32_t fs;
+void delay(uint16_t size, uint16_t in[size], uint16_t out[size]){
+  float bl, fb, ff;
 
-  uint16_t buff_size_mask = size - 1;
-  uint16_t delay_buff_size_mask = delay_size - 1;
-
-  delay_ms = 1;
-  fs = 48000;       // sample rate
   bl = 1;           // blend or dry mix - amount of original signal mixed into output
   fb = 0.5;         // feedback - amount of delayed signal that will support additional delay
   ff = 0.7;         // feed forward - amount of delayed signal that will be sent to output
 
-  delay_samples = delay_ms * fs / 1000;
-
   uint32_t i;
-  uint8_t read_pointer, write_pointer;
 
   i = 0;
-  write_pointer = 0;                          // start at 0
-  read_pointer = delay_size - delay_samples;  // start behind write pointer
+  // repeat, for as many samples are in the input buffer
+  for(int j = 0; j < size; ++j){
 
-  while(1){
-    delayLine[write_pointer] = x[i] + fb * delayLine[read_pointer];
-    write_pointer = (write_pointer+1) & delay_buff_size_mask;
+    out[i]                    = (uint16_t) (  bl * in[i] + ff * delayLine[read_pointer]  );
+    delayLine[write_pointer]  = (uint16_t) (  in[i] + fb * delayLine[read_pointer]       );
 
-
-    x[i] += bl * x[i] + ff * delayLine[read_pointer];
     ++i;
-    i = (i+1) & buff_size_mask;
-    read_pointer = (read_pointer+1) & buff_size_mask;
+    write_pointer = (write_pointer+1) & delay_buff_size_mask;
+    read_pointer = (read_pointer+1) & delay_buff_size_mask;
+
   }
 }
 
@@ -185,9 +194,9 @@ int main(void)
   HAL_ADC_Start_DMA(&hadc1, adc_buf, AUDIO_BLOCK_SIZE * 2);
   HAL_TIM_Base_Start(&htim2);
   printf("Amp Started\r\n");
-  /* USER CODE END 2 */
 
-  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, 1);
+  delay_parameters_init();
+  /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
