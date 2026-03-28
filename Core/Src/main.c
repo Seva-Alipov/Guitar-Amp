@@ -68,7 +68,7 @@ static uint16_t adc_buf[AUDIO_BLOCK_SIZE * 2];
 // DAC ping-pong buffer
 static uint16_t dac_buf[AUDIO_BLOCK_SIZE * 2];
 // I2S output buffer (stereo)
-static uint16_t i2s_tx_buf[4 * AUDIO_BLOCK_SIZE];
+static int16_t i2s_tx_buf[4 * AUDIO_BLOCK_SIZE];
 // Effects use this buffer
 uint16_t effect_buf[AUDIO_BLOCK_SIZE * 2];
 
@@ -319,12 +319,12 @@ int main(void)
         &dac_buf[offset],
         AUDIO_BLOCK_SIZE
       );
-        for (uint16_t i = 0; i < AUDIO_BLOCK_SIZE; i++) {
-          uint16_t s = dac_buf[offset + i];
+      for (uint16_t i = 0; i < AUDIO_BLOCK_SIZE; i++) {
+        int16_t s = ((int32_t)dac_buf[offset + i] - 2048) << 4;
 
-          i2s_tx_buf[2*(offset + i)]     = s; // Left
-          i2s_tx_buf[2*(offset + i) + 1] = s; // Right
-        }
+        i2s_tx_buf[2*(offset + i)]     = s; // Left
+        i2s_tx_buf[2*(offset + i) + 1] = s; // Right
+      }
     }
   }
   /* USER CODE END 3 */
