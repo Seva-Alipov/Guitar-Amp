@@ -117,22 +117,6 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 }
 
 //================================= EFFECTS BEGIN ====================================
-void reverb(uint16_t* in_buf, uint16_t* out_buf, uint16_t size) {
-  static uint16_t last_value = 2048;
-
-  float attenuation = 0.8;
-  float reverb = 0.3;
-
-  uint16_t last_value_new = in_buf[size-1];
-
-  for(int i = size-1; i > 0; i--){
-    out_buf[i] = (in_buf[i] + in_buf[i-1] * reverb) * attenuation;
-  }
-  out_buf[0] = (in_buf[0] + last_value * reverb) * attenuation;
-
-  last_value = last_value_new;
-}
-
 void noise_gate(uint16_t *in_buf, uint16_t *out_buf, uint16_t size)
 {
   /* ---------------- Adjustable parameters ---------------- */
@@ -244,7 +228,7 @@ void process_audio(uint16_t* in_buf, uint16_t* out_buf, uint16_t size)
   switch(Effects_On){
     case None:
       for (uint16_t i = 0; i < size; i++) {
-        out_buf[i] = effect_buf[i];
+        out_buf[i] = in_buf[i];
       }
       break;
     case Delay:
@@ -633,7 +617,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
         break;
       case NoiseGate:
         Effects_On = NoiseGate_Delay;
-        printf("Noise Gate & Echo\r\n");
+        printf("Noise Gate & Delay\r\n");
         break;
       case NoiseGate_Delay:
         Effects_On = Delay;
