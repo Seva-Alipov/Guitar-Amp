@@ -57,11 +57,11 @@ UART_HandleTypeDef huart3;
 #define DELAY_SIZE 25000
 
 // ADC ping-pong buffer (2x block size for DMA double-buffering)
-static uint32_t adc_buf[AUDIO_BLOCK_SIZE * 2];
+static uint16_t adc_buf[AUDIO_BLOCK_SIZE * 2];
 // DAC ping-pong buffer
-static uint32_t dac_buf[AUDIO_BLOCK_SIZE * 2];
+static uint16_t dac_buf[AUDIO_BLOCK_SIZE * 2];
 // Effects use this buffer
-uint32_t effect_buf[AUDIO_BLOCK_SIZE * 2];
+uint16_t effect_buf[AUDIO_BLOCK_SIZE * 2];
 
 
 /* DELAY LINE STUFF FOR THE DELAY FUNCTION */
@@ -85,7 +85,8 @@ static void MX_DAC_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_USART3_UART_Init(void);
 /* USER CODE BEGIN PFP */
-
+uint16_t last_value;
+void reverb(uint16_t* in_buf, uint16_t* out_buf, uint16_t size);
 delay(uint16_t size, uint16_t in[size], uint16_t out[size]);
 
 /* USER CODE END PFP */
@@ -112,7 +113,7 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 }
 
 
-void process_audio(uint32_t* in_buf, uint32_t* out_buf, uint16_t size)
+void process_audio(uint16_t* in_buf, uint16_t* out_buf, uint16_t size)
 {
   delay(size, in_buf, effect_buf);
 
@@ -148,8 +149,7 @@ void delay(uint16_t size, uint16_t in[size], uint16_t out[size]){
 
     ++i;
     write_pointer = (write_pointer+1) & delay_buff_size_mask;
-    read_pointer = (read_pointer+1) & delay_buff_size_mask;
-
+    read_pointer = (read_pointer+1) & buff_size_mask;
   }
 }
 
@@ -190,8 +190,8 @@ int main(void)
   MX_TIM2_Init();
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
-  HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_1, dac_buf, AUDIO_BLOCK_SIZE * 2, DAC_ALIGN_12B_R);
-  HAL_ADC_Start_DMA(&hadc1, adc_buf, AUDIO_BLOCK_SIZE * 2);
+  HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_1, (uint32_t *)dac_buf, AUDIO_BLOCK_SIZE * 2, DAC_ALIGN_12B_R);
+  HAL_ADC_Start_DMA(&hadc1, (uint32_t *)adc_buf, AUDIO_BLOCK_SIZE * 2);
   HAL_TIM_Base_Start(&htim2);
   printf("Amp Started\r\n");
 
