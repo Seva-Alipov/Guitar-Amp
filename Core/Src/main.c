@@ -191,22 +191,17 @@ const float closed_gain = 0.0f;
 }
 
 void delay(uint16_t size, uint16_t *in, uint16_t *out){
-  float bl, fb, ff;
 
-  bl = 1;           // blend or dry mix - amount of original signal mixed into output
-  fb = 0.5;         // feedback - amount of delayed signal that will support additional delay
-  ff = 0.7;         // feed forward - amount of delayed signal that will be sent to output
+  float bl = 1.0;         // blend or dry mix - amount of original signal mixed into output
+  float fb = 0.9;         // feedback - amount of delayed signal that will support additional delay
+  float ff = 0.9;         // feed forward - amount of delayed signal that will be sent to output
 
-  uint32_t i;
-
-  i = 0;
   // repeat, for as many samples are in the input buffer
   for(int j = 0; j < size; ++j){
 
-    out[i]                    = (uint16_t) (  bl * in[i] + ff * delayLine[read_pointer]  );
-    delayLine[write_pointer]  = (uint16_t) (  in[i] + fb * delayLine[read_pointer]       );
+    out[j]                    = (uint16_t) (  bl * in[j] - bl * 2048 + ff * delayLine[read_pointer] + 2048 );
+    delayLine[write_pointer]  = (uint16_t) (  in[j] + fb * delayLine[read_pointer]       );
 
-    ++i;
     write_pointer = (write_pointer+1) & delay_buff_size_mask;
     read_pointer = (read_pointer+1) & delay_buff_size_mask;
   }
@@ -224,7 +219,7 @@ void process_audio(uint16_t* in_buf, uint16_t* out_buf, uint16_t size)
 }
 
 void delay_parameters_init(void){
-  delay_ms = 500;
+  delay_ms = 600;
   fs = 48000;
   delay_samples = delay_ms * fs / 1000;
     
