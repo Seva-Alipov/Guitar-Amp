@@ -67,7 +67,7 @@ uint16_t effect_buf[AUDIO_BLOCK_SIZE * 2];
 /* DELAY LINE STUFF FOR THE DELAY FUNCTION */
 const uint16_t delay_buff_size_mask = DELAY_SIZE-1;
 static uint16_t delay_ms, delay_samples, fs;
-static uint8_t read_pointer, write_pointer;
+static uint16_t read_pointer, write_pointer;
 
 uint16_t delayLine[DELAY_SIZE];
 
@@ -192,18 +192,41 @@ const float closed_gain = 0.0f;
 
 void delay(uint16_t size, uint16_t *in, uint16_t *out){
 
-  float bl = 1.0;         // blend or dry mix - amount of original signal mixed into output
-  float fb = 0.9;         // feedback - amount of delayed signal that will support additional delay
-  float ff = 0.9;         // feed forward - amount of delayed signal that will be sent to output
+  // audio parameters
+  const float bl = 1.0f;
+  const float fb = 0.5f;
+  const float ff = 0.7f;
 
-  // repeat, for as many samples are in the input buffer
-  for(int j = 0; j < size; ++j){
+  // low-pass filter for feedback
+  static float lp = 0;
+  float alpha = 0.6f;
 
-    out[j]                    = (uint16_t) (  bl * in[j] - bl * 2048 + ff * delayLine[read_pointer] + 2048 );
-    delayLine[write_pointer]  = (uint16_t) (  in[j] + fb * delayLine[read_pointer]       );
+  for (uint16_t j = 0; j < size; ++j){
 
-    write_pointer = (write_pointer+1) & delay_buff_size_mask;
-    read_pointer = (read_pointer+1) & delay_buff_size_mask;
+    float dry = (float)in[j] - 2048.0f;
+    float delayed = (float)delayLine[read_pointer] - 2048.0f;
+
+    // output computation
+    float y = bl * dry + ff * delayed;
+
+    // feedback computation
+    lp = alpha * delayed + (1 - alpha) * lp;
+    float fb_sample = dry + fb * lp;
+
+    // clamp outputs
+    float y_out = y + 2048.0f;
+    if (y_out < 0.0f) y_out = 0.0f;
+    if (y_out > 4095.0f) y_out = 4095.0f;
+
+    float d_out = fb_sample + 2048.0f;
+    if (d_out < 0.0f) d_out = 0.0f;
+    if (d_out > 4095.0f) d_out = 4095.0f;
+
+    out[j] = (uint16_t)y_out;
+    delayLine[write_pointer] = (uint16_t)d_out;
+
+    write_pointer = (write_pointer + 1) & delay_buff_size_mask;
+    read_pointer  = (read_pointer  + 1) & delay_buff_size_mask;
   }
 }
 
@@ -219,7 +242,7 @@ void process_audio(uint16_t* in_buf, uint16_t* out_buf, uint16_t size)
 }
 
 void delay_parameters_init(void){
-  delay_ms = 600;
+  delay_ms = 300;
   fs = 48000;
   delay_samples = delay_ms * fs / 1000;
     
