@@ -22,11 +22,18 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "stdio.h"
+#include <stdint.h>
+#include "stm32f4xx_hal_gpio.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
+enum EFFECTS_ON {
+  None,
+  NoiseGate,
+  NoiseGate_Delay,
+  Delay
+};
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -52,15 +59,28 @@ UART_HandleTypeDef huart3;
 
 /* USER CODE BEGIN PV */
 #define AUDIO_BLOCK_SIZE  128
+#define DELAY_SIZE 32768
 
 // ADC ping-pong buffer (2x block size for DMA double-buffering)
-static uint32_t adc_buf[AUDIO_BLOCK_SIZE * 2];
+static uint16_t adc_buf[AUDIO_BLOCK_SIZE * 2];
 // DAC ping-pong buffer
-static uint32_t dac_buf[AUDIO_BLOCK_SIZE * 2];
+static uint16_t dac_buf[AUDIO_BLOCK_SIZE * 2];
+// Effects use this buffer
+uint16_t effect_buf[AUDIO_BLOCK_SIZE * 2];
+
+
+/* DELAY LINE STUFF FOR THE DELAY FUNCTION */
+const uint16_t delay_buff_size_mask = DELAY_SIZE-1;
+static uint16_t delay_ms, delay_samples, fs;
+static uint16_t read_pointer, write_pointer;
+
+uint16_t delayLine[DELAY_SIZE];
 
 // 0 = process lower half, 1 = process upper half
 static volatile uint8_t audio_block_ready = 0;
 static volatile uint8_t audio_block_index = 0;
+
+volatile enum EFFECTS_ON Effects_On = None;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -80,7 +100,7 @@ static void MX_USART3_UART_Init(void);
 int __io_putchar(int ch) {
   HAL_UART_Transmit(&huart3, (uint8_t*)&ch, 1, HAL_MAX_DELAY);
   return ch;
-}  // keep existing
+}
 
 void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc)
 {
@@ -96,18 +116,143 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
   audio_block_ready = 1;
 }
 
-void process_audio(uint32_t* in_buf, uint32_t* out_buf, uint16_t size)
+//================================= EFFECTS BEGIN ====================================
+void noise_gate(uint16_t *in_buf, uint16_t *out_buf, uint16_t size)
 {
-    for (uint16_t i = 0; i < size; i++)
-    {
-        out_buf[i] = in_buf[i];  // pass-through
+  /* ---------------- Adjustable parameters ---------------- */
 
-        // Send sample to visualiser as 2-byte big-endian
-        uint16_t sample = (uint16_t)in_buf[i];
-        uint8_t bytes[2] = { sample >> 8, sample & 0xFF };
-        HAL_UART_Transmit(&huart3, bytes, 2, HAL_MAX_DELAY);
+const float threshold_open  = 180.0f;
+const float threshold_close = 130.0f;
+
+const float env_attack  = 0.4f;
+const float env_release = 0.01f;
+
+const float gain_attack  = 0.2f;
+const float gain_release = 0.01f;
+
+const float closed_gain = 0.0f;
+
+  // ADC/DAC midpoint for 12-bit audio
+  const int32_t dc_offset = 2048;
+
+  /* ---------------- Persistent state ---------------- */
+
+  static float envelope = 0.0f;
+  static float gain = 1.0f;
+
+  /* ---------------- Processing ---------------- */
+
+  for (uint16_t i = 0; i < size; i++) {
+    int32_t x = (int32_t)in_buf[i] - dc_offset;
+    float level = (float)((x < 0) ? -x : x);
+
+    // Envelope follower
+    if (level > envelope) {
+      envelope += env_attack * (level - envelope);
+    } else {
+      envelope += env_release * (level - envelope);
     }
+
+    // Hysteresis gate decision
+    float target_gain = gain;
+
+    if (envelope >= threshold_open) {
+      target_gain = 1.0f;
+    } else if (envelope <= threshold_close) {
+      target_gain = closed_gain;
+    }
+
+    // Smooth gain changes to avoid clicks
+    if (target_gain > gain) {
+      gain += gain_attack * (target_gain - gain);
+    } else {
+      gain += gain_release * (target_gain - gain);
+    }
+
+    // Apply gain
+    int32_t y = (int32_t)((float)x * gain);
+
+    // Re-center and clamp to 12-bit DAC range
+    y += dc_offset;
+    if (y < 0) y = 0;
+    if (y > 4095) y = 4095;
+
+    out_buf[i] = (uint16_t)y;
+  }
 }
+
+void delay(uint16_t size, uint16_t *in, uint16_t *out){
+
+  // audio parameters
+  const float bl = 1.0f;
+  const float fb = 0.5f;
+  const float ff = 0.7f;
+
+  // low-pass filter for feedback
+  static float lp = 0;
+  float alpha = 0.6f;
+
+  for (uint16_t j = 0; j < size; ++j){
+
+    float dry = (float)in[j] - 2048.0f;
+    float delayed = (float)delayLine[read_pointer] - 2048.0f;
+
+    // output computation
+    float y = bl * dry + ff * delayed;
+
+    // feedback computation
+    lp = alpha * delayed + (1 - alpha) * lp;
+    float fb_sample = dry + fb * lp;
+
+    // clamp outputs
+    float y_out = y + 2048.0f;
+    if (y_out < 0.0f) y_out = 0.0f;
+    if (y_out > 4095.0f) y_out = 4095.0f;
+
+    float d_out = fb_sample + 2048.0f;
+    if (d_out < 0.0f) d_out = 0.0f;
+    if (d_out > 4095.0f) d_out = 4095.0f;
+
+    out[j] = (uint16_t)y_out;
+    delayLine[write_pointer] = (uint16_t)d_out;
+
+    write_pointer = (write_pointer + 1) & delay_buff_size_mask;
+    read_pointer  = (read_pointer  + 1) & delay_buff_size_mask;
+  }
+}
+
+// =========================== EFFECTS END =================================
+
+void process_audio(uint16_t* in_buf, uint16_t* out_buf, uint16_t size)
+{
+  switch(Effects_On){
+    case None:
+      for (uint16_t i = 0; i < size; i++) {
+        out_buf[i] = in_buf[i];
+      }
+      break;
+    case Delay:
+      delay(size, in_buf, out_buf);
+      break;
+    case NoiseGate:
+      noise_gate(in_buf, out_buf, size);
+      break;
+    case NoiseGate_Delay:
+      noise_gate(in_buf, effect_buf, size);
+      delay(size, effect_buf, out_buf);
+      break;
+  }
+}
+
+void delay_parameters_init(void){
+  delay_ms = 300;
+  fs = 48000;
+  delay_samples = delay_ms * fs / 1000;
+    
+  write_pointer = 0;
+  read_pointer = DELAY_SIZE - delay_samples;  // start behind write pointer
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -145,9 +290,11 @@ int main(void)
   MX_TIM2_Init();
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
-  HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_1, dac_buf, AUDIO_BLOCK_SIZE * 2, DAC_ALIGN_12B_R);
-  HAL_ADC_Start_DMA(&hadc1, adc_buf, AUDIO_BLOCK_SIZE * 2);
+  HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_1, (uint32_t *)dac_buf, AUDIO_BLOCK_SIZE * 2, DAC_ALIGN_12B_R);
+  HAL_ADC_Start_DMA(&hadc1, (uint32_t *)adc_buf, AUDIO_BLOCK_SIZE * 2);
   HAL_TIM_Base_Start(&htim2);
+
+  delay_parameters_init();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -337,7 +484,7 @@ static void MX_TIM2_Init(void)
   htim2.Instance = TIM2;
   htim2.Init.Prescaler = 0;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 3749;
+  htim2.Init.Period = 1874;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
@@ -429,13 +576,24 @@ static void MX_GPIO_Init(void)
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : USER_BUTTON_Pin */
   GPIO_InitStruct.Pin = USER_BUTTON_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(USER_BUTTON_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : LD3_Pin */
+  GPIO_InitStruct.Pin = LD3_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(LD3_GPIO_Port, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
@@ -447,7 +605,30 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+  if (GPIO_Pin == USER_BUTTON_Pin) {
+    //BUTTON INTERRUPT HERE
+    switch (Effects_On) {
+      case None:
+        Effects_On = NoiseGate;
+        printf("Noise Gate\r\n");
+        break;
+      case NoiseGate:
+        Effects_On = NoiseGate_Delay;
+        printf("Noise Gate & Delay\r\n");
+        break;
+      case NoiseGate_Delay:
+        Effects_On = Delay;
+        printf("Delay only\r\n");
+        break;
+      case Delay:
+        Effects_On = None;
+        printf("Effects off\r\n");
+        break;
+    }
+  }
+}
 /* USER CODE END 4 */
 
 /**
