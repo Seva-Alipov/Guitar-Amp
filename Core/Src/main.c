@@ -28,7 +28,12 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
+enum EFFECTS_ON {
+  None,
+  NoiseGate,
+  NoiseGate_Delay,
+  Delay
+};
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -74,6 +79,8 @@ uint16_t delayLine[DELAY_SIZE];
 // 0 = process lower half, 1 = process upper half
 static volatile uint8_t audio_block_ready = 0;
 static volatile uint8_t audio_block_index = 0;
+
+volatile enum EFFECTS_ON Effects_On = None;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -234,10 +241,22 @@ void delay(uint16_t size, uint16_t *in, uint16_t *out){
 
 void process_audio(uint16_t* in_buf, uint16_t* out_buf, uint16_t size)
 {
-  delay(size, in_buf, effect_buf);
-
-  for (uint16_t i = 0; i < size; i++) {
-    out_buf[i] = effect_buf[i];
+  switch(Effects_On){
+    case None:
+      for (uint16_t i = 0; i < size; i++) {
+        out_buf[i] = effect_buf[i];
+      }
+      break;
+    case Delay:
+      delay(size, in_buf, out_buf);
+      break;
+    case NoiseGate:
+      noise_gate(in_buf, out_buf, size);
+      break;
+    case NoiseGate_Delay:
+      noise_gate(in_buf, effect_buf, size);
+      delay(size, effect_buf, out_buf);
+      break;
   }
 }
 
@@ -482,7 +501,7 @@ static void MX_TIM2_Init(void)
   htim2.Instance = TIM2;
   htim2.Init.Prescaler = 0;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 3749;
+  htim2.Init.Period = 1874;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
@@ -574,13 +593,24 @@ static void MX_GPIO_Init(void)
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : USER_BUTTON_Pin */
   GPIO_InitStruct.Pin = USER_BUTTON_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(USER_BUTTON_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : LD3_Pin */
+  GPIO_InitStruct.Pin = LD3_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(LD3_GPIO_Port, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
@@ -592,7 +622,30 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+  if (GPIO_Pin == USER_BUTTON_Pin) {
+    //BUTTON INTERRUPT HERE
+    switch (Effects_On) {
+      case None:
+        Effects_On = NoiseGate;
+        printf("Noise Gate\r\n");
+        break;
+      case NoiseGate:
+        Effects_On = NoiseGate_Delay;
+        printf("Noise Gate & Echo\r\n");
+        break;
+      case NoiseGate_Delay:
+        Effects_On = Delay;
+        printf("Delay only\r\n");
+        break;
+      case Delay:
+        Effects_On = None;
+        printf("Effects off\r\n");
+        break;
+    }
+  }
+}
 /* USER CODE END 4 */
 
 /**
