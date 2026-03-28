@@ -85,9 +85,6 @@ static void MX_DAC_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_USART3_UART_Init(void);
 /* USER CODE BEGIN PFP */
-uint16_t last_value;
-void reverb(uint16_t* in_buf, uint16_t* out_buf, uint16_t size);
-delay(uint16_t size, uint16_t in[size], uint16_t out[size]);
 
 /* USER CODE END PFP */
 
@@ -96,7 +93,7 @@ delay(uint16_t size, uint16_t in[size], uint16_t out[size]);
 int __io_putchar(int ch) {
   HAL_UART_Transmit(&huart3, (uint8_t*)&ch, 1, HAL_MAX_DELAY);
   return ch;
-}  // keep existing
+}
 
 void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc)
 {
@@ -112,6 +109,88 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
   audio_block_ready = 1;
 }
 
+//EFFECTS BEGIN
+void reverb(uint16_t* in_buf, uint16_t* out_buf, uint16_t size) {
+  static uint16_t last_value = 2048;
+
+  float attenuation = 0.8;
+  float reverb = 0.3;
+
+  uint16_t last_value_new = in_buf[size-1];
+
+  for(int i = size-1; i > 0; i--){
+    out_buf[i] = (in_buf[i] + in_buf[i-1] * reverb) * attenuation;
+  }
+  out_buf[0] = (in_buf[0] + last_value * reverb) * attenuation;
+
+  last_value = last_value_new;
+}
+
+void noise_gate(uint16_t *in_buf, uint16_t *out_buf, uint16_t size)
+{
+  /* ---------------- Adjustable parameters ---------------- */
+
+const float threshold_open  = 180.0f;
+const float threshold_close = 130.0f;
+
+const float env_attack  = 0.4f;
+const float env_release = 0.01f;
+
+const float gain_attack  = 0.2f;
+const float gain_release = 0.01f;
+
+const float closed_gain = 0.0f;
+
+  // ADC/DAC midpoint for 12-bit audio
+  const int32_t dc_offset = 2048;
+
+  /* ---------------- Persistent state ---------------- */
+
+  static float envelope = 0.0f;
+  static float gain = 1.0f;
+
+  /* ---------------- Processing ---------------- */
+
+  for (uint16_t i = 0; i < size; i++) {
+    int32_t x = (int32_t)in_buf[i] - dc_offset;
+    float level = (float)((x < 0) ? -x : x);
+
+    // Envelope follower
+    if (level > envelope) {
+      envelope += env_attack * (level - envelope);
+    } else {
+      envelope += env_release * (level - envelope);
+    }
+
+    // Hysteresis gate decision
+    float target_gain = gain;
+
+    if (envelope >= threshold_open) {
+      target_gain = 1.0f;
+    } else if (envelope <= threshold_close) {
+      target_gain = closed_gain;
+    }
+
+    // Smooth gain changes to avoid clicks
+    if (target_gain > gain) {
+      gain += gain_attack * (target_gain - gain);
+    } else {
+      gain += gain_release * (target_gain - gain);
+    }
+
+    // Apply gain
+    int32_t y = (int32_t)((float)x * gain);
+
+    // Re-center and clamp to 12-bit DAC range
+    y += dc_offset;
+    if (y < 0) y = 0;
+    if (y > 4095) y = 4095;
+
+    out_buf[i] = (uint16_t)y;
+  }
+}
+
+//EFFECTS END
 
 void process_audio(uint16_t* in_buf, uint16_t* out_buf, uint16_t size)
 {
@@ -477,24 +556,13 @@ static void MX_GPIO_Init(void)
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
-  __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
-
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : USER_BUTTON_Pin */
   GPIO_InitStruct.Pin = USER_BUTTON_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(USER_BUTTON_GPIO_Port, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : LD3_Pin */
-  GPIO_InitStruct.Pin = LD3_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(LD3_GPIO_Port, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
