@@ -54,6 +54,7 @@ DAC_HandleTypeDef hdac;
 DMA_HandleTypeDef hdma_dac1;
 
 I2S_HandleTypeDef hi2s2;
+DMA_HandleTypeDef hdma_spi2_tx;
 
 TIM_HandleTypeDef htim2;
 
@@ -251,7 +252,7 @@ void process_audio(uint16_t* in_buf, uint16_t* out_buf, uint16_t size)
 
 void delay_parameters_init(void){
   delay_ms = 300;
-  fs = 48000;
+  fs = 44100;
   delay_samples = delay_ms * fs / 1000;
     
   write_pointer = 0;
@@ -298,6 +299,7 @@ int main(void)
   /* USER CODE BEGIN 2 */
   HAL_DAC_Start_DMA(&hdac, DAC_CHANNEL_1, (uint32_t *)dac_buf, AUDIO_BLOCK_SIZE * 2, DAC_ALIGN_12B_R);
   HAL_ADC_Start_DMA(&hadc1, (uint32_t *)adc_buf, AUDIO_BLOCK_SIZE * 2);
+  HAL_I2S_Transmit_DMA(&hi2s2, (uint16_t *)i2s_tx_buf, 4 * AUDIO_BLOCK_SIZE);
   HAL_TIM_Base_Start(&htim2);
   printf("Amp Started\r\n");
 
@@ -496,7 +498,7 @@ static void MX_I2S2_Init(void)
   hi2s2.Init.Standard = I2S_STANDARD_PHILIPS;
   hi2s2.Init.DataFormat = I2S_DATAFORMAT_16B;
   hi2s2.Init.MCLKOutput = I2S_MCLKOUTPUT_DISABLE;
-  hi2s2.Init.AudioFreq = I2S_AUDIOFREQ_48K;
+  hi2s2.Init.AudioFreq = I2S_AUDIOFREQ_44K;
   hi2s2.Init.CPOL = I2S_CPOL_LOW;
   hi2s2.Init.ClockSource = I2S_CLOCK_PLL;
   hi2s2.Init.FullDuplexMode = I2S_FULLDUPLEXMODE_DISABLE;
@@ -531,7 +533,7 @@ static void MX_TIM2_Init(void)
   htim2.Instance = TIM2;
   htim2.Init.Prescaler = 0;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 1874;
+  htim2.Init.Period = 2040;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
@@ -599,6 +601,9 @@ static void MX_DMA_Init(void)
   __HAL_RCC_DMA1_CLK_ENABLE();
 
   /* DMA interrupt init */
+  /* DMA1_Stream4_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream4_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream4_IRQn);
   /* DMA1_Stream5_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Stream5_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA1_Stream5_IRQn);
