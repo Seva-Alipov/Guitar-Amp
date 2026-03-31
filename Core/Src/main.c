@@ -33,7 +33,10 @@ enum EFFECTS_ON {
   None,
   NoiseGate,
   NoiseGate_Delay,
-  Delay
+  Delay,
+  Distortion,
+  NoiseGate_Distortion,
+  Noisegate_Distortion_Reverb
 };
 /* USER CODE END PTD */
 
@@ -126,7 +129,7 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 //================================= EFFECTS BEGIN ====================================
 void noise_gate(uint16_t *in_buf, uint16_t *out_buf, uint16_t size)
 {
-  /* ---------------- Adjustable parameters ---------------- */
+  // Adjustable parametres
 
   const float threshold_open  = 180.0f;
   const float threshold_close = 130.0f;
@@ -139,18 +142,15 @@ void noise_gate(uint16_t *in_buf, uint16_t *out_buf, uint16_t size)
   
   const float closed_gain = 0.0f;
 
-  // ADC/DAC midpoint for 12-bit audio
-  const int32_t dc_offset = 2048;
-
-  /* ---------------- Persistent state ---------------- */
+  // Persistent state
 
   static float envelope = 0.0f;
   static float gain = 1.0f;
 
-  /* ---------------- Processing ---------------- */
+  // Processing
 
   for (uint16_t i = 0; i < size; i++) {
-    int32_t x = (int32_t)in_buf[i] - dc_offset;
+    int32_t x = (int32_t)in_buf[i] - 2048;
     float level = (float)((x < 0) ? -x : x);
 
     // Envelope follower
@@ -169,18 +169,16 @@ void noise_gate(uint16_t *in_buf, uint16_t *out_buf, uint16_t size)
       target_gain = closed_gain;
     }
 
-    // Smooth gain changes to avoid clicks
+    // Smooth gain changes
     if (target_gain > gain) {
       gain += gain_attack * (target_gain - gain);
     } else {
       gain += gain_release * (target_gain - gain);
     }
 
-    // Apply gain
     int32_t y = (int32_t)((float)x * gain);
 
-    // Re-center and clamp to 12-bit DAC range
-    y += dc_offset;
+    y += 2048;
     if (y < 0) y = 0;
     if (y > 4095) y = 4095;
 
@@ -232,11 +230,9 @@ void distortion(uint16_t *buf_in, uint16_t *buf_out, uint16_t size)
 {
   const float drive = 3.0f;    // input gain
   const float level = 0.8f;    // output volume
-  const int32_t dc = 2048;
 
   for (uint16_t i = 0; i < size; i++) {
-    // center and normalize (-1 to 1)
-    float x = ((int32_t)buf_in[i] - dc) / 2048.0f;
+    float x = ((int32_t)buf_in[i] - 2048) / 2048.0f;
 
     // apply gain
     x *= drive;
@@ -248,7 +244,7 @@ void distortion(uint16_t *buf_in, uint16_t *buf_out, uint16_t size)
     y *= level;
 
     // back to DAC range
-    int32_t out = (int32_t)(y * 2048.0f) + dc;
+    int32_t out = (int32_t)(y * 2048.0f) + 2048;
 
     // clamp
     if (out < 0) out = 0;
@@ -276,6 +272,18 @@ void process_audio(uint16_t* in_buf, uint16_t* out_buf, uint16_t size)
       break;
     case NoiseGate_Delay:
       noise_gate(in_buf, effect_buf, size);
+      delay(size, effect_buf, out_buf);
+      break;
+    case Distortion:
+      distortion(in_buf, out_buf, size);
+      break;
+    case NoiseGate_Distortion:
+      noise_gate(in_buf, effect_buf, size);
+      distortion(effect_buf, out_buf, size);
+      break;
+    case Noisegate_Distortion_Reverb:
+      noise_gate(in_buf, effect_buf, size);
+      distortion(effect_buf, effect_buf, size);
       delay(size, effect_buf, out_buf);
       break;
   }
@@ -706,6 +714,18 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
         printf("Delay only\r\n");
         break;
       case Delay:
+        Effects_On = Distortion;
+        printf("Distortion only \r\n");
+        break;
+      case Distortion:
+        Effects_On = NoiseGate_Distortion;
+        printf("Noise Gate & Distortion");
+        break;
+      case NoiseGate_Distortion:
+        Effects_On = Noisegate_Distortion_Reverb;
+        printf("All effects on\r\n");
+        break;
+      case Noisegate_Distortion_Reverb:
         Effects_On = None;
         printf("Effects off\r\n");
         break;
