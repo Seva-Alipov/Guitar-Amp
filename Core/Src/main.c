@@ -24,6 +24,7 @@
 #include "stdio.h"
 #include <stdint.h>
 #include "stm32f4xx_hal_gpio.h"
+#include "math.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -127,16 +128,16 @@ void noise_gate(uint16_t *in_buf, uint16_t *out_buf, uint16_t size)
 {
   /* ---------------- Adjustable parameters ---------------- */
 
-const float threshold_open  = 180.0f;
-const float threshold_close = 130.0f;
+  const float threshold_open  = 180.0f;
+  const float threshold_close = 130.0f;
 
-const float env_attack  = 0.4f;
-const float env_release = 0.01f;
-
-const float gain_attack  = 0.2f;
-const float gain_release = 0.01f;
-
-const float closed_gain = 0.0f;
+  const float env_attack  = 0.4f;
+  const float env_release = 0.01f;
+  
+  const float gain_attack  = 0.2f;
+  const float gain_release = 0.01f;
+  
+  const float closed_gain = 0.0f;
 
   // ADC/DAC midpoint for 12-bit audio
   const int32_t dc_offset = 2048;
@@ -224,6 +225,36 @@ void delay(uint16_t size, uint16_t *in, uint16_t *out){
 
     write_pointer = (write_pointer + 1) & delay_buff_size_mask;
     read_pointer  = (read_pointer  + 1) & delay_buff_size_mask;
+  }
+}
+
+void distortion(uint16_t *buf_in, uint16_t *buf_out, uint16_t size)
+{
+  const float drive = 3.0f;    // input gain
+  const float level = 0.8f;    // output volume
+  const int32_t dc = 2048;
+
+  for (uint16_t i = 0; i < size; i++) {
+    // center and normalize (-1 to 1)
+    float x = ((int32_t)buf_in[i] - dc) / 2048.0f;
+
+    // apply gain
+    x *= drive;
+
+    // soft clipping
+    float y = tanhf(x);
+
+    // output level
+    y *= level;
+
+    // back to DAC range
+    int32_t out = (int32_t)(y * 2048.0f) + dc;
+
+    // clamp
+    if (out < 0) out = 0;
+    if (out > 4095) out = 4095;
+
+    buf_out[i] = (uint16_t)out;
   }
 }
 
