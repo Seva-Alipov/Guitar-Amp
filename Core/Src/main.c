@@ -131,16 +131,16 @@ void noise_gate(uint16_t *in_buf, uint16_t *out_buf, uint16_t size)
 {
   // Adjustable parametres
 
-  const float threshold_open  = 180.0f;
-  const float threshold_close = 130.0f;
+const float threshold_open  = 110.0f;
+const float threshold_close = 70.0f;
 
-  const float env_attack  = 0.4f;
-  const float env_release = 0.01f;
-  
-  const float gain_attack  = 0.2f;
-  const float gain_release = 0.01f;
-  
-  const float closed_gain = 0.0f;
+const float env_attack  = 0.25f;
+const float env_release = 0.003f;
+
+const float gain_attack  = 0.12f;
+const float gain_release = 0.0015f;
+
+const float closed_gain = 0.05f;
 
   // Persistent state
 
@@ -228,8 +228,7 @@ void delay(uint16_t size, uint16_t *in, uint16_t *out){
 
 void distortion(uint16_t *buf_in, uint16_t *buf_out, uint16_t size)
 {
-  const float drive = 3.0f;    // input gain
-  const float level = 0.8f;    // output volume
+  const float drive = 5.0f;    // input gain
 
   for (uint16_t i = 0; i < size; i++) {
     float x = ((int32_t)buf_in[i] - 2048) / 2048.0f;
@@ -239,9 +238,6 @@ void distortion(uint16_t *buf_in, uint16_t *buf_out, uint16_t size)
 
     // soft clipping
     float y = tanhf(x);
-
-    // output level
-    y *= level;
 
     // back to DAC range
     int32_t out = (int32_t)(y * 2048.0f) + 2048;
@@ -719,7 +715,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
         break;
       case Distortion:
         Effects_On = NoiseGate_Distortion;
-        printf("Noise Gate & Distortion");
+        printf("Noise Gate & Distortion\r\n");
         break;
       case NoiseGate_Distortion:
         Effects_On = Noisegate_Distortion_Reverb;
