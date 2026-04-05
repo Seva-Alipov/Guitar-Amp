@@ -68,9 +68,9 @@ UART_HandleTypeDef huart3;
 #define AUDIO_BLOCK_SIZE  128
 #define DELAY_SIZE 32768
 
-// ADC ping-pong buffer (2x block size for DMA double-buffering)
+// ADC buffer (2x block size for DMA double-buffering)
 static uint16_t adc_buf[AUDIO_BLOCK_SIZE * 2];
-// DAC ping-pong buffer
+// DAC buffer
 static uint16_t dac_buf[AUDIO_BLOCK_SIZE * 2];
 // I2S output buffer (stereo)
 static int16_t i2s_tx_buf[4 * AUDIO_BLOCK_SIZE];
@@ -127,28 +127,24 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 }
 
 //================================= EFFECTS BEGIN ====================================
-void noise_gate(uint16_t *in_buf, uint16_t *out_buf, uint16_t size)
-{
+void noise_gate(uint16_t *in_buf, uint16_t *out_buf, uint16_t size) {
   // Adjustable parametres
+  const float threshold_open  = 110.0f;
+  const float threshold_close = 70.0f;
 
-const float threshold_open  = 110.0f;
-const float threshold_close = 70.0f;
+  const float env_attack  = 0.25f;
+  const float env_release = 0.003f;
 
-const float env_attack  = 0.25f;
-const float env_release = 0.003f;
+  const float gain_attack  = 0.12f;
+  const float gain_release = 0.0015f;
 
-const float gain_attack  = 0.12f;
-const float gain_release = 0.0015f;
-
-const float closed_gain = 0.05f;
+  const float closed_gain = 0.05f;
 
   // Persistent state
-
   static float envelope = 0.0f;
   static float gain = 1.0f;
 
   // Processing
-
   for (uint16_t i = 0; i < size; i++) {
     int32_t x = (int32_t)in_buf[i] - 2048;
     float level = (float)((x < 0) ? -x : x);
@@ -228,21 +224,17 @@ void delay(uint16_t size, uint16_t *in, uint16_t *out){
 
 void distortion(uint16_t *buf_in, uint16_t *buf_out, uint16_t size)
 {
-  const float drive = 5.0f;    // input gain
+  const float drive = 5.0f;    // input gain (adjustable)
 
   for (uint16_t i = 0; i < size; i++) {
     float x = ((int32_t)buf_in[i] - 2048) / 2048.0f;
 
-    // apply gain
     x *= drive;
 
-    // soft clipping
     float y = tanhf(x);
 
-    // back to DAC range
     int32_t out = (int32_t)(y * 2048.0f) + 2048;
 
-    // clamp
     if (out < 0) out = 0;
     if (out > 4095) out = 4095;
 
